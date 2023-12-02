@@ -30,9 +30,8 @@ async function run() {
       .db("verderaRealEstateDB")
       .collection("properties");
     const userCollection = client.db("verderaRealEstateDB").collection("users");
-    const offerCollection = client
-      .db("verderaRealEstateDB")
-      .collection("offers");
+    const offerCollection = client.db("verderaRealEstateDB").collection("offers");
+    const wishListCollection = client.db("verderaRealEstateDB").collection("wishList");
 
     const verifyToken = (req, res, next) => {
       const token = req.cookies.token;
@@ -128,8 +127,6 @@ async function run() {
       res.send(result);
     });
 
-
-
     // user offers api
     app.post("/offers", verifyToken, async (req, res) => {
       const body = req.body; // body
@@ -178,13 +175,6 @@ async function run() {
       res.send(result);
     });
 
-    // app.put("/users/:id", async (req, res) => {
-    //   const id = req.params.id;
-    //   const result = await propertyCollection.updateOne({ _id: new ObjectId(id), role: "Admin" },
-    //   { $set: { verification_status: "Verified" } });
-    //   res.send(result);
-    // });
-
     app.put("/users/admin/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       console.log('Admin id', id);
@@ -199,9 +189,11 @@ async function run() {
       const result = await userCollection.find().toArray();
       res.send(result);
     });
-    app.get("/user/:email", async (req, res) => {
+    app.get("/user/:email",verifyToken, async (req, res) => {
       const email = req.params.email;
+      console.log(email);
       const result = await userCollection.findOne({email});
+      console.log(result);
       res.send(result);
     });
     app.delete("/users/:id", verifyToken, async (req, res) => {
@@ -211,6 +203,29 @@ async function run() {
       res.send(result);
     });
 
+
+
+    // wish list 
+
+    app.post("/wishList", verifyToken, async (req, res) => {
+      const body = req.body; 
+      const wishList = {
+        ...body,
+      };
+      const result = await wishListCollection.insertOne(wishList);
+      res.send(result);
+    });
+
+    app.get('/wishList', verifyToken, async(req,res)=> {
+      const result = await wishListCollection.find().toArray();
+      res.send(result);
+    });
+    app.delete('/wishList/:id', async(req, res)=> {
+      const id = req.params.id;
+      const filter = {_id: new ObjectId(id)}
+      const result = await wishListCollection.deleteOne(filter);
+      res.send(result);
+    })
     
     await client.db("admin").command({ ping: 1 });
     console.log(
