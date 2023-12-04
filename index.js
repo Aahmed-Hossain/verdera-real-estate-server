@@ -32,6 +32,7 @@ async function run() {
     const userCollection = client.db("verderaRealEstateDB").collection("users");
     const offerCollection = client.db("verderaRealEstateDB").collection("offers");
     const wishListCollection = client.db("verderaRealEstateDB").collection("wishList");
+    const reviewCollection = client.db("verderaRealEstateDB").collection("reviews");
 
     const verifyToken = (req, res, next) => {
       const token = req.cookies.token;
@@ -113,6 +114,7 @@ async function run() {
 
     app.get("/properties/:id", async (req, res) => {
       const id = req.params.id;
+      console.log('properties', id);
       const filter = { _id: new ObjectId(id) };
       const result = await propertyCollection.findOne(filter);
       res.send(result);
@@ -126,6 +128,8 @@ async function run() {
       const result = await propertyCollection.insertOne(property);
       res.send(result);
     });
+
+
 
     // user offers api
     app.post("/offers", verifyToken, async (req, res) => {
@@ -144,6 +148,11 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/allOffers", verifyToken, async (req, res) => {
+      const result = await offerCollection.find().toArray();
+      res.send(result);
+    });
+
     app.get("/offers", verifyToken, async (req, res) => {
       let query = {};
       if (req.query?.email) {
@@ -155,7 +164,9 @@ async function run() {
 
     app.get("/offers/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
+      console.log("/offers/:id",id);
       const filter = { _id: new ObjectId(id) };
+      console.log("/offers/:id", filter);
       const result = await offerCollection.findOne(filter);
       res.send(result);
     });
@@ -177,7 +188,7 @@ async function run() {
 
     app.put("/users/admin/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
-      console.log('Admin id', id);
+      // console.log('Admin id', id);
       const result = await userCollection.updateOne(
         { _id: new ObjectId(id), role: { $in: ["Agent", "User"] } },
         { $set: { role: "Admin" } }
@@ -191,9 +202,9 @@ async function run() {
     });
     app.get("/user/:email",verifyToken, async (req, res) => {
       const email = req.params.email;
-      console.log(email);
-      const result = await userCollection.findOne({email});
-      console.log(result);
+      // console.log(email);
+      const result = await userCollection.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } });
+      // console.log(result);
       res.send(result);
     });
     app.delete("/users/:id", verifyToken, async (req, res) => {
@@ -202,8 +213,6 @@ async function run() {
       const result = await userCollection.deleteOne(filter);
       res.send(result);
     });
-
-
 
     // wish list 
 
@@ -216,8 +225,10 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/wishList', verifyToken, async(req,res)=> {
-      const result = await wishListCollection.find().toArray();
+    app.get('/wishList/:email', verifyToken, async(req,res)=> {
+      const email = req.params.email;
+      // console.log('/wishList/:email', email);
+      const result = await wishListCollection.find({email}).toArray();
       res.send(result);
     });
     app.delete('/wishList/:id', async(req, res)=> {
@@ -225,7 +236,47 @@ async function run() {
       const filter = {_id: new ObjectId(id)}
       const result = await wishListCollection.deleteOne(filter);
       res.send(result);
+    });
+
+    // reviews related api
+    app.get('/reviews', verifyToken, async(req,res)=> {
+      const result = await reviewCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.get('/reviews/titleSpecific/:title', verifyToken, async(req,res)=> {
+      const title = req.params.title
+      const result = await reviewCollection.find({property_title:title}).toArray();
+      res.send(result);
+    });
+
+    app.post("/reviews/titleSpecific", verifyToken, async (req, res) => {
+      const body = req.body; // body
+      const review = {
+        ...body,
+      };
+      const result = await reviewCollection.insertOne(review);
+      res.send(result);
+    });
+
+    app.get('/reviews/:email', verifyToken, async(req,res)=> {
+      const email = req.params.email;
+      const result = await reviewCollection.find({email}).toArray();
+      console.log(result);
+      res.send(result);
+    });
+
+    app.delete('/reviews/:id', verifyToken, async(req, res)=>{
+      const id =  req.params.id;
+      const filter = {_id: new ObjectId(id)};
+      const result = await reviewCollection.deleteOne(filter);
+      res.send(result);
     })
+
+
+
+ 
+
     
     await client.db("admin").command({ ping: 1 });
     console.log(
