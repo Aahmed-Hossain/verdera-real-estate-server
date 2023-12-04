@@ -11,7 +11,7 @@ const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 // middle ware
-app.use(cors({ origin: ["http://localhost:5173"], credentials: true }));
+app.use(cors({ origin: ["http://localhost:5173", "https://fir-module51.web.app"], credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -25,7 +25,7 @@ const client = new MongoClient(uri, {
 });
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     const propertyCollection = client
       .db("verderaRealEstateDB")
       .collection("properties");
@@ -73,6 +73,7 @@ async function run() {
         })
         .send({ success: true });
     });
+    
 
     app.get("/properties", async (req, res) => {
       const query = {
@@ -149,6 +150,15 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/allProperties/:name", async (req, res) => {
+      const name = req.params.name;
+      console.log(name);
+      const query = { property_title: { $regex: new RegExp(name, "i") } }; // Case-insensitive search
+      const result = await propertyCollection.find(query).toArray();
+      res.send(result);
+    });
+   
+
 
 
     // user offers api
@@ -179,6 +189,25 @@ async function run() {
       if (req.query?.email) {
         query = { agent_email: req.query.email };
       }
+      const result = await offerCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    app.get("/offers/user", verifyToken, async (req, res) => {
+      let query = {};
+      if (req.query?.email) {
+        query = { email: req.query.email };
+      }
+      const result = await offerCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    app.get("/offers/accepted/calculatePrice", async (req, res) => {
+      const { status, email } = req.query;
+      const query = {
+        status: status || "Accepted", 
+        email: email ,
+      };
       const result = await offerCollection.find(query).toArray();
       res.send(result);
     });
