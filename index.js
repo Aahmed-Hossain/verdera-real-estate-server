@@ -88,6 +88,8 @@ async function run() {
       const result = await propertyCollection.find(query).toArray();
       res.send(result);
     });
+
+
     //property verify related api
     app.delete("/properties/verifiyStatus/:id", async (req, res) => {
       const id = req.params.id;
@@ -95,10 +97,30 @@ async function run() {
       const result = await propertyCollection.deleteOne(filter);
       res.send(result);
     });
+
     app.put("/properties/verifiyStatus/:id", async (req, res) => {
       const id = req.params.id;
       const result = await propertyCollection.updateOne({ _id: new ObjectId(id), verification_status: "Pending" },
       { $set: { verification_status: "Verified" } });
+      res.send(result);
+    });
+
+     app.delete("/properties/addedProperties/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const filter = {_id: new ObjectId(id)}
+      const result = await propertyCollection.deleteOne(filter);
+      res.send(result);
+    });
+
+    app.put("/properties/addedProperties/:id", async (req, res) => {
+      const id = { _id: new ObjectId(req.params.id) };
+      console.log("/properties/addedProperties/:id", id);
+      const body = req.body;
+      const updatedData = {
+        $set: { ...body },
+      };
+      const option = { upsert: true };
+      const result = await propertyCollection.updateOne(id, updatedData, option);
       res.send(result);
     });
 
@@ -110,8 +132,6 @@ async function run() {
       const result = await propertyCollection.find(query).toArray();
       res.send(result);
     });
-
-
     app.get("/properties/:id", async (req, res) => {
       const id = req.params.id;
       console.log('properties', id);
@@ -153,10 +173,11 @@ async function run() {
       res.send(result);
     });
 
+    // TO LOAD INDIVIDUAL DATA FOR AGENT TO  ACCEPT OR REJECT A OFFER
     app.get("/offers", verifyToken, async (req, res) => {
       let query = {};
       if (req.query?.email) {
-        query = { email: req.query.email };
+        query = { agent_email: req.query.email };
       }
       const result = await offerCollection.find(query).toArray();
       res.send(result);
@@ -164,10 +185,26 @@ async function run() {
 
     app.get("/offers/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
-      console.log("/offers/:id",id);
       const filter = { _id: new ObjectId(id) };
-      console.log("/offers/:id", filter);
       const result = await offerCollection.findOne(filter);
+      res.send(result);
+    });
+
+    app.put("/allOffers/accepted/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const result = await offerCollection.updateOne(
+        { _id: new ObjectId(id), status: { $in: ["Pending", "pending", "Rejected", "Accepted"] } },
+        { $set: { status: "Accepted" } }
+      );
+      res.send(result);
+    });
+
+    app.put("/allOffers/rejected/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const result = await offerCollection.updateOne(
+        { _id: new ObjectId(id), status: { $in: ["Pending", "pending", "Rejected", "Accepted"] } },
+        { $set: { status: "Rejected" } }
+      );
       res.send(result);
     });
 
@@ -192,6 +229,16 @@ async function run() {
       const result = await userCollection.updateOne(
         { _id: new ObjectId(id), role: { $in: ["Agent", "User"] } },
         { $set: { role: "Admin" } }
+      );
+      res.send(result);
+    });
+
+    app.put("/users/agent/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      // console.log('Admin id', id);
+      const result = await userCollection.updateOne(
+        { _id: new ObjectId(id), role: { $in: ["User"] } },
+        { $set: { role: "Agent" } }
       );
       res.send(result);
     });
@@ -231,12 +278,26 @@ async function run() {
       const result = await wishListCollection.find({email}).toArray();
       res.send(result);
     });
+    // app.get('/allWishList', async(req,res)=> {
+    //   const result = await wishListCollection.find().toArray();
+    //   res.send(result);
+    // });
+    // app.get('/allWishList/:id',  async(req,res)=> {
+    //   const id = req.params.id;
+    //   const filter = {_id : new ObjectId(id)}
+    //   const result = await wishListCollection.find(filter).toArray();
+    //   res.send(result);
+    // });
     app.delete('/wishList/:id', async(req, res)=> {
       const id = req.params.id;
       const filter = {_id: new ObjectId(id)}
       const result = await wishListCollection.deleteOne(filter);
       res.send(result);
     });
+
+
+
+
 
     // reviews related api
     app.get('/reviews', verifyToken, async(req,res)=> {
