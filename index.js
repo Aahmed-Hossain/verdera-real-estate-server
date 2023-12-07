@@ -2,11 +2,11 @@ const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
+const nodemailer = require('nodemailer');
 require("dotenv").config();
-// const stripe = require("stripe")(
-//   "sk_test_51OGC6bLgdKhl0Qn1VTDVWazHBd3FObmpcdxeXac6U9KWZiDgswRyGhpU6onToj0lDjK6r7dX2NuNyTUPRn4uw4aw00q8x2pbWN"
-// );
+const stripe = require("stripe")(process.env.PAYMENT_SECRET_KRY);
 const app = express();
+
 const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
@@ -33,6 +33,7 @@ async function run() {
     const offerCollection = client.db("verderaRealEstateDB").collection("offers");
     const wishListCollection = client.db("verderaRealEstateDB").collection("wishList");
     const reviewCollection = client.db("verderaRealEstateDB").collection("reviews");
+    const paymentCollection = client.db("verderaRealEstateDB").collection("payments");
 
     const verifyToken = (req, res, next) => {
       const token = req.cookies.token;
@@ -48,6 +49,45 @@ async function run() {
         next();
       });
     };
+
+    const verifyAdmin = async (req, res, next)=> {
+      const user = req.user;
+      const query = {email: user?.email};
+      const result = await userCollection.findOne(query);
+      if(!result || result?.role !=="Admin")
+      return res.status(401).send({message: 'Un Authorized'})
+    next();
+    }
+    const verifyAgent = async (req, res, next)=> {
+      const user = req.user;
+      const query = {email: user?.email};
+      const result = await userCollection.findOne(query);
+      if(!result || result?.role !=="Agent")
+      return res.status(401).send({message: 'Un Authorized'})
+    next();
+    };
+// TODO: Tried to use confirmation mail after successfull payment.
+    // const sendEmail = ()=> {
+    //   const transporter = nodemailer.createTransport({
+    //     service: 'gmail',
+    //     host:'smtp.gmail.com',
+    //     port: 587,
+    //     secure:false,
+    //     auth:{
+    //       user:process.env.EMAIL_PASS,
+    //       pass:process.env.EMAIL_PASS
+    //     }
+
+    //   })
+    //   transporter.verify((error,success)=> {
+    //     if(error){
+    //       console.log(error);
+    //     }else{
+    //       console.log('server is ready to take our mail', success);
+    //     }
+
+    //   })
+    // }
 
     app.post("/jwt", async (req, res) => {
       const user = req.body;
@@ -89,8 +129,6 @@ async function run() {
       const result = await propertyCollection.find(query).toArray();
       res.send(result);
     });
-
-
     //property verify related api
     app.delete("/properties/verifiyStatus/:id", async (req, res) => {
       const id = req.params.id;
@@ -150,14 +188,27 @@ async function run() {
       res.send(result);
     });
 
+    // app.get("/allProperties/:name", async (req, res) => {
+    //   const name = req.params.name;
+    //   console.log(name);
+    //   const query = { property_title: { $regex: new RegExp(name, "i") } }; // Case-insensitive search
+    //   const result = await propertyCollection.find(query).toArray();
+    //   res.send(result);
+    // });
     app.get("/allProperties/:name", async (req, res) => {
-      const name = req.params.name;
-      console.log(name);
-      const query = { property_title: { $regex: new RegExp(name, "i") } }; // Case-insensitive search
-      const result = await propertyCollection.find(query).toArray();
-      res.send(result);
-    });
-   
+      try {
+        const name = req.params.name;
+        console.log(name);
+        const decodedSearchTerm = decodeURIComponent(name); // Decode the search term
+        const query = { property_title: { $regex: new RegExp(decodedSearchTerm, "i") } };
+        const result = await propertyCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching data:", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    }); 
+    
 
 
 
@@ -307,16 +358,6 @@ async function run() {
       const result = await wishListCollection.find({email}).toArray();
       res.send(result);
     });
-    // app.get('/allWishList', async(req,res)=> {
-    //   const result = await wishListCollection.find().toArray();
-    //   res.send(result);
-    // });
-    // app.get('/allWishList/:id',  async(req,res)=> {
-    //   const id = req.params.id;
-    //   const filter = {_id : new ObjectId(id)}
-    //   const result = await wishListCollection.find(filter).toArray();
-    //   res.send(result);
-    // });
     app.delete('/wishList/:id', async(req, res)=> {
       const id = req.params.id;
       const filter = {_id: new ObjectId(id)}
@@ -324,13 +365,10 @@ async function run() {
       res.send(result);
     });
 
-
-
-
-
     // reviews related api
-    app.get('/reviews', verifyToken, async(req,res)=> {
+    app.get('/reviews', async(req,res)=> {
       const result = await reviewCollection.find().toArray();
+      console.log(result );
       res.send(result);
     });
 
@@ -361,13 +399,59 @@ async function run() {
       const filter = {_id: new ObjectId(id)};
       const result = await reviewCollection.deleteOne(filter);
       res.send(result);
-    })
+    });
 
+    // payment related api
+    app.post('/createPaymentIntent',async(req, res)=> {
+      const {price} = req.body;
+      const amount = parseInt(price*100);
+      if(!price || amount<1) return;
+      const {client_secret} = await stripe.paymentIntents.create({
+        amount:amount,
+        currency: 'usd',
+        payment_method_types: ['card']
+      });
+      res.send({clientSecret: client_secret});
+    });
 
+    app.post('/payments', async(req,res)=> {
+      const payment = req.body;
+      const result = await paymentCollection.insertOne(payment);
+      res.send(result);
+    });
 
- 
-
+    app.get('/payment/specifiAgent', async (req, res) => {
+      const email = req.query.email; // Use req.query.email instead of req.params.email
+      console.log(email);
     
+      const result = await paymentCollection.find({ 'payment.agent_email': email }).toArray(); // Use correct property to filter
+      console.log(result);
+    
+      res.send(result);
+    });
+    
+
+    // TODO: want to change status of accepted offered sale_status but not working.
+
+    // app.patch('/saleStatus', async (req, res) => {
+    //   const id = req.params.id;
+    //   const status = req.query.status; // Access status from query parameters
+    //   const query = { _id: new ObjectId(id) };
+    //   const updateDoc = {
+    //     $set: {
+    //       sale_status: status,
+    //     },
+    //   };
+    //   try {
+    //     const result = await offerCollection.updateOne(query, updateDoc);
+    //     console.log(result);
+    //     res.send(result);
+    //   } catch (err) {
+    //     console.error(err);
+    //     res.status(500).send(err.message);
+    //   }
+    // });
+
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
