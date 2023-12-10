@@ -2,10 +2,16 @@ const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
-const nodemailer = require('nodemailer');
 require("dotenv").config();
 const stripe = require("stripe")(process.env.PAYMENT_SECRET_KRY);
 const app = express();
+const formData = require('form-data');
+const Mailgun = require('mailgun.js');
+const mailgun = new Mailgun(formData);
+const mg = mailgun.client({
+	username: 'api',
+	key: process.env.MAIL_GUN_API_KEY,
+});
 
 const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -57,7 +63,8 @@ async function run() {
       if(!result || result?.role !=="Admin")
       return res.status(401).send({message: 'Un Authorized'})
     next();
-    }
+    };
+
     const verifyAgent = async (req, res, next)=> {
       const user = req.user;
       const query = {email: user?.email};
@@ -66,28 +73,6 @@ async function run() {
       return res.status(401).send({message: 'Un Authorized'})
     next();
     };
-// TODO: Tried to use confirmation mail after successfull payment.
-    // const sendEmail = ()=> {
-    //   const transporter = nodemailer.createTransport({
-    //     service: 'gmail',
-    //     host:'smtp.gmail.com',
-    //     port: 587,
-    //     secure:false,
-    //     auth:{
-    //       user:process.env.EMAIL_PASS,
-    //       pass:process.env.EMAIL_PASS
-    //     }
-
-    //   })
-    //   transporter.verify((error,success)=> {
-    //     if(error){
-    //       console.log(error);
-    //     }else{
-    //       console.log('server is ready to take our mail', success);
-    //     }
-
-    //   })
-    // }
 
     app.post("/jwt", async (req, res) => {
       const user = req.body;
@@ -171,9 +156,9 @@ async function run() {
       const result = await propertyCollection.find(query).toArray();
       res.send(result);
     });
+    
     app.get("/properties/:id", async (req, res) => {
       const id = req.params.id;
-      console.log('properties', id);
       const filter = { _id: new ObjectId(id) };
       const result = await propertyCollection.findOne(filter);
       res.send(result);
@@ -187,6 +172,23 @@ async function run() {
       const result = await propertyCollection.insertOne(property);
       res.send(result);
     });
+
+    app.delete('/mark-fraud/:email', verifyToken,  async(req, res)=> {
+      try{
+        const  fraudEmail = req?.params?.email;
+      // {agent_email: fraudEmail, verification_status: "Pending"}
+      const updateUserResult = await userCollection.updateOne(
+        { email: fraudEmail, role: { $in: ["Agent", "User", "Admin"] } },
+        { $set: { role: "Fraud" } }
+      );
+      const deletePropertiesResult = await propertyCollection.deleteMany({ agent_email: fraudEmail });
+      res.send({ updateUserResult, deletePropertiesResult });
+      }
+      catch(error){
+        res.send(error)
+      }
+    })
+
 
     // app.get("/allProperties/:name", async (req, res) => {
     //   const name = req.params.name;
@@ -288,9 +290,6 @@ async function run() {
       res.send(result);
     });
 
-
-
-
     // user related api
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -317,7 +316,7 @@ async function run() {
       const id = req.params.id;
       // console.log('Admin id', id);
       const result = await userCollection.updateOne(
-        { _id: new ObjectId(id), role: { $in: ["User"] } },
+        { _id: new ObjectId(id), role: { $in: ["User", "Fraud"] } },
         { $set: { role: "Agent" } }
       );
       res.send(result);
@@ -402,7 +401,7 @@ async function run() {
     });
 
     // payment related api
-    app.post('/createPaymentIntent',async(req, res)=> {
+    app.post('/createPaymentIntent', verifyToken, async(req, res)=> {
       const {price} = req.body;
       const amount = parseInt(price*100);
       if(!price || amount<1) return;
@@ -414,19 +413,38 @@ async function run() {
       res.send({clientSecret: client_secret});
     });
 
-    app.post('/payments', async(req,res)=> {
+    app.post('/payments',verifyToken, async(req,res)=> {
       const payment = req.body;
       const result = await paymentCollection.insertOne(payment);
+      mg.messages
+	.create(process.env.MAIL_GUN_SENDING_DOMAIN, {
+		from: "Mailgun Sandbox <postmaster@sandboxd1b4c498ff5c4e41ac9128f88ce33a08.mailgun.org>",
+		to: [`${payment?.payment?.email}`],
+		subject: "Verdera Real Estate Company",
+		text: "Testing some Mailgun awesomness!",
+    html: `
+    <div>
+    <h2> Thank you for your order</h2>
+   <h4> Yor Transaction ID: <strong>${payment.transactionId}"</strong></h4>
+   <p> We would like to get your Feedback</p>
+    </div>
+    `
+	})
+	.then(msg => console.log(msg)) // logs response data
+	.catch(err => console.log(err)); // logs any error`;
       res.send(result);
     });
 
-    app.get('/payment/specifiAgent', async (req, res) => {
-      const email = req.query.email; // Use req.query.email instead of req.params.email
+    app.get('/payment/specifiAgent',verifyToken, async (req, res) => {
+      const email = req.query.email;
+      const result = await paymentCollection.find({ 'payment.agent_email': email }).toArray();
+      res.send(result);
+    });
+
+    app.get('/payment/specificUser', verifyToken, async (req, res) => {
+      const email = req.query.email;
       console.log(email);
-    
-      const result = await paymentCollection.find({ 'payment.agent_email': email }).toArray(); // Use correct property to filter
-      console.log(result);
-    
+      const result = await paymentCollection.find({ 'payment.email': email }).toArray();
       res.send(result);
     });
     
